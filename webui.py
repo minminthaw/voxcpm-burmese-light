@@ -29,6 +29,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 import torch
 from voxcpm.model.voxcpm2 import VoxCPM2Model
+from voxcpm.watermark import embed_watermark
 
 DEFAULT_PORT = 7860
 DEFAULT_MODEL_DIR = os.path.join(SCRIPT_DIR, "pretrained_models", "VoxCPM2_MM_Light")
@@ -552,6 +553,9 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
                     mode=mode
                 )
 
+                # Embed inaudible acoustic watermark
+                wav_data = embed_watermark(wav_data, sr=sample_rate)
+
                 out_filename = f"speech_{int(time.time() * 1000)}.wav"
                 out_path = os.path.join(OUTPUT_DIR, out_filename)
                 sf.write(out_path, wav_data, sample_rate)
@@ -595,6 +599,9 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
                     timesteps=5,
                     mode="int8"
                 )
+
+                # Embed inaudible acoustic watermark
+                wav_data = embed_watermark(wav_data, sr=sample_rate)
 
                 # Write to buffer
                 import io

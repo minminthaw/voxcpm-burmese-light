@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, "VoxCPM", "src"))
 import torch
 import soundfile as sf
 from voxcpm.model.voxcpm2 import VoxCPM2Model
+from voxcpm.watermark import embed_watermark
 
 DEFAULT_MODEL_DIR = os.path.join(SCRIPT_DIR, "pretrained_models", "VoxCPM2_MM_Light")
 
@@ -49,6 +50,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--pause", type=float, default=0.3, help="Pause duration (seconds) between story sentences (default: 0.3s)")
     parser.add_argument("--min-len", type=int, default=0, help="Minimum generated token steps (useful for pruned models)")
+    parser.add_argument("--no-watermark", action="store_true", help="Disable imperceptible acoustic watermark")
     return parser.parse_args()
 
 def split_into_sentences(text: str) -> list[str]:
@@ -185,10 +187,13 @@ def main():
         except OSError:
             pass
 
-    # 4. Concatenate and Save
+    # 4. Watermark & Save
     final_audio = np.concatenate(all_audio_chunks, axis=0)
     total_duration = len(final_audio) / model.sample_rate
     total_time = time.time() - t_start
+
+    if not args.no_watermark:
+        final_audio = embed_watermark(final_audio, sr=model.sample_rate)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     sf.write(args.output, final_audio, model.sample_rate)
@@ -197,6 +202,7 @@ def main():
     print(f"[Success] Story Audio saved to: {args.output}")
     print(f"  Total Audio Duration: {total_duration:.2f} seconds")
     print(f"  Sample Rate:          {model.sample_rate} Hz (48kHz Studio Quality)")
+    print(f"  Watermark:            {'Acoustic DSSS (Inaudible)' if not args.no_watermark else 'Disabled'}")
     print(f"  Total Synthesis Time: {total_time:.2f}s")
     print(f"  Real-time Factor:     {total_time / total_duration:.2f}x")
     print("=" * 65)
