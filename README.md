@@ -5,7 +5,7 @@
 [![Sample Rate](https://img.shields.io/badge/Audio-48kHz%20Studio%20Quality-brightgreen.svg)]()
 [![Memory Mode](https://img.shields.io/badge/RAM-~3.5GB%20INT8-orange.svg)]()
 [![API Standard](https://img.shields.io/badge/API-OpenAI%20Compatible-blueviolet.svg)]()
-[![Platform](https://img.shields.io/badge/Platform-macOS%20(Metal)%20%7C%20Ubuntu%20(CPU%2FCUDA)-lightgrey.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Ubuntu-lightgrey.svg)]()
 
 A production-ready, lightweight foundation text-to-speech (TTS) and voice-cloning system specialized strictly for **Burmese (မြန်မာစာ, my-MM)** and **English (en)**, based on OpenBMB's 2.29B tokenizer-free foundation model **VoxCPM2**.
 
@@ -44,6 +44,28 @@ Once installation finishes, launch the Web UI & API Server:
 ```
 
 Your browser will automatically open: **`http://localhost:7860`**
+
+---
+
+## 🪟 Quick Start: Windows 10 / 11 (CUDA GPU & CPU)
+
+1. Clone or download the repository:
+```cmd
+git clone https://github.com/minminthaw/voxcpm-burmese-light.git
+cd voxcpm-burmese-light
+```
+
+2. Run the **1-Click Installer** (or double-click `install_windows.bat` in File Explorer):
+```cmd
+install_windows.bat
+```
+*(Auto-detects NVIDIA CUDA GPU vs CPU, installs ffmpeg, sets up `.venv`, and downloads pre-pruned weights)*
+
+3. Once installed, launch the Web UI anytime:
+```cmd
+start_webui.bat
+```
+Your browser will open: **`http://localhost:7860`**. For detailed Windows instructions, see [docs/WINDOWS_SETUP.md](docs/WINDOWS_SETUP.md).
 
 ---
 
@@ -146,7 +168,9 @@ python run_tts.py --text "မင်္ဂလာပါ" --ref-audio examples/refe
 voxcpm-burmese-light/
 ├── install_mac.sh          # 1-command installer for macOS
 ├── install_ubuntu.sh       # 1-command installer for Ubuntu Server
-├── start_webui.sh          # Web UI & Speech API launcher
+├── install_windows.bat     # 1-click installer for Windows (CUDA / CPU)
+├── start_webui.sh          # Web UI & Speech API launcher (Mac / Linux)
+├── start_webui.bat         # Web UI & Speech API launcher (Windows)
 ├── start_server.sh         # Headless server launcher
 ├── webui.py                # Standalone Web Dashboard & OpenAI API Server
 ├── run_tts.py              # Production CLI script with Auto Voice-Lock
@@ -159,6 +183,7 @@ voxcpm-burmese-light/
 ├── docker-compose.yml      # Container orchestration
 ├── docs/
 │   ├── MAC_SETUP.md        # Detailed macOS setup guide
+│   ├── WINDOWS_SETUP.md    # Detailed Windows 10/11 setup guide
 │   ├── UBUNTU_SERVER.md    # Dedicated server deployment guide
 │   └── OPENAI_API.md       # API specification & client code in Python, Node, PHP
 ├── examples/               # Reference speaker audio samples
