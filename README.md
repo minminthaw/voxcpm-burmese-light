@@ -31,7 +31,7 @@ It reduces the foundation model's heavy memory footprint from **~10.5 GB down to
 Run the **1-Command Installer**:
 
 ```bash
-git clone https://github.com/your-username/voxcpm-burmese-light.git
+git clone https://github.com/minminthaw/voxcpm-burmese-light.git
 cd voxcpm-burmese-light
 chmod +x install_mac.sh start_webui.sh
 ./install_mac.sh
@@ -52,7 +52,7 @@ Your browser will automatically open: **`http://localhost:7860`**
 Run the **1-Command Ubuntu Installer**:
 
 ```bash
-git clone https://github.com/your-username/voxcpm-burmese-light.git
+git clone https://github.com/minminthaw/voxcpm-burmese-light.git
 cd voxcpm-burmese-light
 chmod +x install_ubuntu.sh start_server.sh
 ./install_ubuntu.sh
