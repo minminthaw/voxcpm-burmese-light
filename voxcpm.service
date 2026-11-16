@@ -1,0 +1,17 @@
+[Unit]
+Description=VoxCPM2 Lightweight Burmese & English OpenAI TTS API Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/voxcpm-burmese-light
+ExecStart=/opt/voxcpm-burmese-light/.venv/bin/python webui.py --port 7860
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  voxcpm-tts:
+    build: .
+    container_name: voxcpm-burmese-tts
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./pretrained_models:/app/pretrained_models
+      - ./outputs:/app/outputs
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 6G

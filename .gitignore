@@ -1,0 +1,32 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Model Checkpoints (Downloaded automatically by download_models.py)
+pretrained_models
+pretrained_models/
+*.safetensors
+*.pth
+*.bin
+*.gguf
+
+# Generated Outputs
+outputs/*.wav
+outputs/*.mp3
+outputs/webui_speech_*.wav
+outputs/speech_*.wav
+outputs/.auto_ref_*.wav
+
+# System & IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
