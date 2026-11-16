@@ -1,5 +1,6 @@
 # VoxCPM2 Lightweight (Burmese + English) 🇲🇲 🇬🇧
 
+[![Hugging Face Model](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-minthura635%2Fvoxmmlite-yellow.svg)](https://huggingface.co/minthura635/voxmmlite)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Sample Rate](https://img.shields.io/badge/Audio-48kHz%20Studio%20Quality-brightgreen.svg)]()
 [![Memory Mode](https://img.shields.io/badge/RAM-~3.5GB%20INT8-orange.svg)]()

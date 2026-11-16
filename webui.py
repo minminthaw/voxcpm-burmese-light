@@ -18,7 +18,7 @@ import json
 import time
 import subprocess
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import threading
 import numpy as np
 import soundfile as sf
@@ -635,7 +635,7 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
         self.send_error(404, "Not Found")
 
 def run_server(port=DEFAULT_PORT):
-    server = HTTPServer(("0.0.0.0", port), SimpleTTSHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), SimpleTTSHandler)
     print("=" * 65)
     print(f"VoxCPM2 Lightweight Web UI & Speech API Server running at:")
     print(f"  👉 Web Dashboard:  http://localhost:{port}")
