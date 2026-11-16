@@ -21,9 +21,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application source code
 COPY . /app
 
+RUN chmod +x /app/entrypoint.sh
+
 EXPOSE 7860
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:7860/health || exit 1
 
-CMD ["python", "webui.py", "--port", "7860"]
+ENTRYPOINT ["./entrypoint.sh"]
