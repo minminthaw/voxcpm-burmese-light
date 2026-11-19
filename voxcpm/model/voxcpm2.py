@@ -189,6 +189,7 @@ class VoxCPM2Model(nn.Module):
         self.ref_audio_start_token = 103
         self.ref_audio_end_token = 104
         self.last_successful_seed = None
+        self.step_callback = None
 
         # Residual Acoustic LM
         residual_lm_config = config.lm_config.model_copy(deep=True)
@@ -1080,7 +1081,13 @@ class VoxCPM2Model(nn.Module):
         self.residual_lm.kv_cache.fill_caches(residual_kv_cache_tuple)
         residual_hidden = residual_enc_outputs[:, -1, :]
 
+        cb = getattr(self, "step_callback", None)
         for i in tqdm(range(max_len)):
+            if cb is not None:
+                try:
+                    cb(i, max_len)
+                except Exception:
+                    pass
             dit_hidden_1 = self.lm_to_dit_proj(lm_hidden)  # [b, h_dit]
             dit_hidden_2 = self.res_to_dit_proj(residual_hidden)  # [b, h_dit]
             dit_hidden = torch.cat((dit_hidden_1, dit_hidden_2), dim=-1)

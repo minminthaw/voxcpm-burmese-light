@@ -45,12 +45,42 @@ class ModelManager:
         self.model = None
         self.current_model_path = None
         self.current_mode = None
+        self.progress = {
+            "status": "idle",
+            "sentence": 0,
+            "total_sentences": 0,
+            "step": 0,
+            "pct": 0.0,
+            "elapsed": 0.0,
+            "message": "Ready"
+        }
+        self.progress_lock = threading.Lock()
+        self._start_time = None
         if torch.cuda.is_available():
             self.device = "cuda"
         elif torch.backends.mps.is_available():
             self.device = "mps"
         else:
             self.device = "cpu"
+
+    def update_progress(self, status, sentence=0, total_sentences=0, step=0, pct=0.0, message=""):
+        with self.progress_lock:
+            elapsed = 0.0
+            if self._start_time:
+                elapsed = round(time.time() - self._start_time, 1)
+            self.progress = {
+                "status": status,
+                "sentence": sentence,
+                "total_sentences": total_sentences,
+                "step": step,
+                "pct": round(pct, 1),
+                "elapsed": elapsed,
+                "message": message
+            }
+
+    def get_progress(self):
+        with self.progress_lock:
+            return dict(self.progress)
 
     @classmethod
     def get(cls):
@@ -84,65 +114,132 @@ class ModelManager:
             return self.model
 
     def synthesize(self, text, ref_audio="", prompt_text="", timesteps=5, cfg=2.0, seed=42, pause=0.3, min_len=0, model_path=DEFAULT_MODEL_DIR, mode="int8"):
+        self._start_time = time.time()
+        self.update_progress("preparing", message="Loading model & preparing pipeline...")
         with self._lock:  # Serialized lock guarantees zero KV-cache data races
-            model = self.load_model(model_path, mode)
-            
-            # Split text into sentences for long-form narrative
-            raw_lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-            sentences = []
-            for line in raw_lines:
-                parts = [p.strip() for p in line.split("။") if p.strip()]
-                for p in parts:
-                    if not p.endswith("။") and not p.endswith("."):
-                        sentences.append(p + "။")
-                    else:
-                        sentences.append(p)
-            if not sentences:
-                sentences = [text]
+            try:
+                model = self.load_model(model_path, mode)
+                
+                # Split text into sentences for long-form narrative
+                raw_lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
+                sentences = []
+                for line in raw_lines:
+                    parts = [p.strip() for p in line.split("။") if p.strip()]
+                    for p in parts:
+                        if not p.endswith("။") and not p.endswith("."):
+                            sentences.append(p + "။")
+                        else:
+                            sentences.append(p)
+                if not sentences:
+                    sentences = [text]
 
-            all_chunks = []
-            pause_samples = int(model.sample_rate * pause)
-            silence = np.zeros(pause_samples, dtype=np.float32)
+                total_sentences = len(sentences)
+                self.update_progress(
+                    "generating",
+                    sentence=1,
+                    total_sentences=total_sentences,
+                    pct=2.0,
+                    message=f"Starting generation for {total_sentences} sentence(s)..."
+                )
 
-            auto_ref_path = os.path.join(OUTPUT_DIR, f".auto_ref_{int(time.time() * 1000)}.wav")
+                all_chunks = []
+                pause_samples = int(model.sample_rate * pause)
+                silence = np.zeros(pause_samples, dtype=np.float32)
 
-            for i, sent in enumerate(sentences):
-                current_ref = ref_audio
-                # Auto Voice-Lock: use Sentence 1 as reference for subsequent sentences
-                if not current_ref and i > 0 and os.path.exists(auto_ref_path):
-                    current_ref = auto_ref_path
+                auto_ref_path = os.path.join(OUTPUT_DIR, f".auto_ref_{int(time.time() * 1000)}.wav")
 
-                gen_kwargs = {
-                    "target_text": sent,
-                    "reference_wav_path": current_ref,
-                    "prompt_text": prompt_text,
-                    "inference_timesteps": timesteps,
-                    "cfg_value": cfg,
-                    "seed": seed,
-                }
-                if min_len > 0:
-                    gen_kwargs["min_len"] = min_len
+                for i, sent in enumerate(sentences):
+                    sentence_num = i + 1
+                    current_ref = ref_audio
+                    # Auto Voice-Lock: use Sentence 1 as reference for subsequent sentences
+                    if not current_ref and i > 0 and os.path.exists(auto_ref_path):
+                        current_ref = auto_ref_path
 
-                wav = model.generate(**gen_kwargs)
-                chunk = wav.squeeze().cpu().numpy()
+                    gen_kwargs = {
+                        "target_text": sent,
+                        "reference_wav_path": current_ref,
+                        "prompt_text": prompt_text,
+                        "inference_timesteps": timesteps,
+                        "cfg_value": cfg,
+                        "seed": seed,
+                    }
+                    if min_len > 0:
+                        gen_kwargs["min_len"] = min_len
 
-                if i == 0 and not ref_audio and len(sentences) > 1:
-                    sf.write(auto_ref_path, chunk, model.sample_rate)
+                    target_tokens = len(model.text_tokenizer(sent)) if hasattr(model, "text_tokenizer") else 25
+                    expected_steps = max(20, int(target_tokens * 2.5))
 
-                all_chunks.append(chunk)
-                if i < len(sentences) - 1 and pause > 0:
-                    all_chunks.append(silence)
+                    def make_step_callback(sent_idx, total_sents, exp_steps):
+                        def on_step(step_idx, max_len):
+                            if step_idx < exp_steps:
+                                sent_frac = (step_idx + 1) / exp_steps * 0.95
+                            else:
+                                sent_frac = min(0.98, 0.95 + 0.03 * ((step_idx - exp_steps + 1) / 30))
+                            overall_pct = ((sent_idx - 1 + sent_frac) / total_sents) * 100.0
+                            self.update_progress(
+                                status="generating",
+                                sentence=sent_idx,
+                                total_sentences=total_sents,
+                                step=step_idx + 1,
+                                pct=overall_pct,
+                                message=f"Synthesizing sentence {sent_idx}/{total_sents} (step {step_idx + 1})..."
+                            )
+                        return on_step
 
-            if os.path.exists(auto_ref_path):
-                try:
-                    os.remove(auto_ref_path)
-                except OSError:
-                    pass
+                    model.step_callback = make_step_callback(sentence_num, total_sentences, expected_steps)
+                    try:
+                        wav = model.generate(**gen_kwargs)
+                    finally:
+                        model.step_callback = None
 
-            final_wav = np.concatenate(all_chunks, axis=0)
-            if hasattr(torch, "mps") and torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-            return final_wav, model.sample_rate
+                    chunk = wav.squeeze().cpu().numpy()
+
+                    if i == 0 and not ref_audio and len(sentences) > 1:
+                        sf.write(auto_ref_path, chunk, model.sample_rate)
+
+                    all_chunks.append(chunk)
+                    if i < len(sentences) - 1 and pause > 0:
+                        all_chunks.append(silence)
+
+                    sent_done_pct = (sentence_num / total_sentences) * 96.0
+                    self.update_progress(
+                        status="generating",
+                        sentence=sentence_num,
+                        total_sentences=total_sentences,
+                        step=expected_steps,
+                        pct=sent_done_pct,
+                        message=f"Completed sentence {sentence_num}/{total_sentences}."
+                    )
+
+                if os.path.exists(auto_ref_path):
+                    try:
+                        os.remove(auto_ref_path)
+                    except OSError:
+                        pass
+
+                self.update_progress(
+                    status="finalizing",
+                    sentence=total_sentences,
+                    total_sentences=total_sentences,
+                    pct=97.0,
+                    message="Encoding audio & applying watermark..."
+                )
+
+                final_wav = np.concatenate(all_chunks, axis=0)
+                if hasattr(torch, "mps") and torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+
+                self.update_progress(
+                    status="complete",
+                    sentence=total_sentences,
+                    total_sentences=total_sentences,
+                    pct=100.0,
+                    message=f"Generation finished in {round(time.time() - self._start_time, 1)}s"
+                )
+                return final_wav, model.sample_rate
+            except Exception as e:
+                self.update_progress("error", message=str(e))
+                raise e
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="my">
@@ -366,6 +463,22 @@ HTML_PAGE = """<!DOCTYPE html>
     </div>
 
     <button class="btn-generate" id="btn-gen" onclick="generateSpeech()">Generate 48kHz Speech (အသံထုတ်ယူရန်)</button>
+
+    <!-- Real-time Progress Bar & Status -->
+    <div id="progress-container" style="display: none; margin-top: 18px; background: #080c16; padding: 18px; border-radius: 10px; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span id="progress-label" style="font-size: 14px; font-weight: 600; color: var(--primary);">⏳ Starting VoxCPM2 synthesizer...</span>
+        <span id="progress-pct" style="font-size: 15px; font-weight: 700; color: #fff;">0%</span>
+      </div>
+      <div style="width: 100%; height: 10px; background: #151d30; border-radius: 999px; overflow: hidden; border: 1px solid var(--border); position: relative;">
+        <div id="progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.25s ease; border-radius: 999px;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 10px;">
+        <span id="progress-stats">Sentence: 0/0</span>
+        <span id="progress-time">Elapsed: 0.0s</span>
+      </div>
+    </div>
+
     <div id="status-bar"></div>
 
     <div class="card player-card" id="player-card">
@@ -403,9 +516,39 @@ HTML_PAGE = """<!DOCTYPE html>
       const btn = document.getElementById('btn-gen');
       const status = document.getElementById('status-bar');
       const playerCard = document.getElementById('player-card');
+      const progContainer = document.getElementById('progress-container');
+      const progLabel = document.getElementById('progress-label');
+      const progPct = document.getElementById('progress-pct');
+      const progFill = document.getElementById('progress-fill');
+      const progStats = document.getElementById('progress-stats');
+      const progTime = document.getElementById('progress-time');
 
       btn.disabled = true;
-      status.innerText = "⏳ Synthesizing speech with VoxCPM2... Please wait.";
+      status.innerText = "";
+      playerCard.style.display = 'none';
+      progContainer.style.display = 'block';
+      progFill.style.width = '3%';
+      progFill.style.background = 'linear-gradient(90deg, var(--primary), var(--accent))';
+      progPct.innerText = '0%';
+      progLabel.innerText = '⏳ Starting VoxCPM2 synthesizer...';
+      progStats.innerText = 'Preparing model...';
+      progTime.innerText = 'Elapsed: 0.0s';
+
+      let pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch('/api/progress');
+          const data = await res.json();
+          if (data.status === 'generating' || data.status === 'preparing' || data.status === 'finalizing') {
+            progFill.style.width = Math.max(3, data.pct) + '%';
+            progPct.innerText = Math.round(data.pct) + '%';
+            if (data.message) progLabel.innerText = '⚡ ' + data.message;
+            if (data.total_sentences > 0) {
+              progStats.innerText = `Sentence ${data.sentence}/${data.total_sentences} (Step ${data.step})`;
+            }
+            progTime.innerText = `Elapsed: ${data.elapsed.toFixed(1)}s`;
+          }
+        } catch (e) {}
+      }, 250);
 
       const payload = {
         text: text,
@@ -424,10 +567,20 @@ HTML_PAGE = """<!DOCTYPE html>
           body: JSON.stringify(payload)
         });
         const data = await res.json();
+        clearInterval(pollInterval);
+
         if (data.error) {
           status.innerText = "❌ Error: " + data.error;
+          progContainer.style.display = 'none';
         } else {
           const durSec = ((performance.now() - t0) / 1000).toFixed(1);
+          progFill.style.width = '100%';
+          progPct.innerText = '100%';
+          progFill.style.background = 'var(--success)';
+          progLabel.innerText = '✅ Speech Generation Complete!';
+          progStats.innerText = `Audio Duration: ${data.duration.toFixed(2)}s`;
+          progTime.innerText = `Total: ${durSec}s`;
+
           status.innerText = "✅ Generated in " + durSec + "s! Audio Duration: " + data.duration.toFixed(2) + "s";
           document.getElementById('audio-player').src = data.audio_url + '?t=' + Date.now();
           document.getElementById('download-link').href = data.audio_url;
@@ -436,7 +589,9 @@ HTML_PAGE = """<!DOCTYPE html>
           document.getElementById('audio-player').play();
         }
       } catch (err) {
+        clearInterval(pollInterval);
         status.innerText = "❌ Connection failed: " + err;
+        progContainer.style.display = 'none';
       } finally {
         btn.disabled = false;
       }
@@ -467,6 +622,15 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
             self.send_cors_headers()
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode("utf-8"))
+            return
+
+        elif path == "/api/progress":
+            manager = ModelManager.get()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps(manager.get_progress()).encode("utf-8"))
             return
 
         elif path == "/health":
