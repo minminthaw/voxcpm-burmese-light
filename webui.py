@@ -39,7 +39,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 class ModelManager:
     """Manages loaded model instance and inference cache with thread safety."""
     _instance = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __init__(self):
         self.model = None
@@ -538,6 +538,8 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
                 data = json.loads(body.decode("utf-8"))
                 text = data.get("text", "")
                 model_path = data.get("model_path", DEFAULT_MODEL_DIR)
+                if model_path and not os.path.isabs(model_path):
+                    model_path = os.path.join(SCRIPT_DIR, model_path)
                 mode = data.get("mode", "int8")
                 timesteps = int(data.get("timesteps", 5))
                 pause = float(data.get("pause", 0.3))
@@ -641,7 +643,15 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
 
         self.send_error(404, "Not Found")
 
-def run_server(port=DEFAULT_PORT):
+def run_server(port=DEFAULT_PORT, preload=True):
+    if preload:
+        print("[Startup] Pre-loading VoxCPM2 Lightweight (INT8) into RAM...")
+        try:
+            ModelManager.get().load_model(DEFAULT_MODEL_DIR, mode="int8")
+            print("✓ Model is warm, INT8-quantized, and resident in RAM!")
+        except Exception as e:
+            print(f"⚠️ Pre-loading failed ({e}), will load on first request.")
+
     server = ThreadingHTTPServer(("0.0.0.0", port), SimpleTTSHandler)
     print("=" * 65)
     print(f"VoxCPM2 Lightweight Web UI & Speech API Server running at:")
@@ -659,5 +669,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--no-preload", action="store_true", help="Do not preload model on startup")
     args = parser.parse_args()
-    run_server(args.port)
+    run_server(args.port, preload=not args.no_preload)
