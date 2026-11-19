@@ -74,7 +74,11 @@ class ModelManager:
                 from torchao.quantization import quantize_, Int8DynamicActivationInt8WeightConfig
                 quantize_(self.model.base_lm, Int8DynamicActivationInt8WeightConfig())
                 quantize_(self.model.residual_lm, Int8DynamicActivationInt8WeightConfig())
-                print(f"[ModelManager] Applied INT8 Quantization (~3.5GB RAM mode) in {time.time() - t0:.2f}s")
+                import gc
+                gc.collect()
+                if hasattr(torch, "mps") and torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+                print(f"[ModelManager] Applied INT8 Quantization & purged FP32 cache in {time.time() - t0:.2f}s")
             self.current_model_path = model_path
             self.current_mode = mode
             return self.model
@@ -136,6 +140,8 @@ class ModelManager:
                     pass
 
             final_wav = np.concatenate(all_chunks, axis=0)
+            if hasattr(torch, "mps") and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
             return final_wav, model.sample_rate
 
 HTML_PAGE = """<!DOCTYPE html>
