@@ -456,9 +456,22 @@ HTML_PAGE = """<!DOCTYPE html>
         </div>
       </div>
 
-      <div style="margin-top: 10px;">
-        <label class="label">Zero-Shot Voice Cloning (Reference Audio Path)</label>
-        <input type="text" id="ref-audio" placeholder="examples/reference_speaker.wav (Optional)">
+      <div style="margin-top: 14px;">
+        <label class="label">Speaker Voice & Timbre (အသံရွေးချယ်ရန်)</label>
+        <div class="grid" style="margin-bottom: 0;">
+          <div>
+            <select id="voice-preset" onchange="onVoicePresetChange(this.value)">
+              <option value="examples/voices/burmese_female.wav" selected>👩 Burmese Female (ကြည်လင်သော မြန်မာအမျိုးသမီးသံ - ⭐ Recommended)</option>
+              <option value="examples/voices/burmese_male.wav">👨 Burmese Male (သဘာဝကျသော မြန်မာလူငယ်သံ)</option>
+              <option value="examples/voices/english_female.wav">👱‍♀️ English Female (Natural English - Jenny)</option>
+              <option value="">🎙️ Default Unconditioned (မော်ဒယ် မူလအသံနက် - အဖိုးကြီးသံ)</option>
+              <option value="custom">📁 Custom Audio File / Path (မိမိစိတ်ကြိုက် အသံဖိုင်လမ်းကြောင်း)...</option>
+            </select>
+          </div>
+          <div>
+            <input type="text" id="ref-audio" placeholder="examples/voices/burmese_female.wav" value="examples/voices/burmese_female.wav" readonly style="opacity: 0.85;">
+          </div>
+        </div>
       </div>
     </div>
 
@@ -505,6 +518,21 @@ HTML_PAGE = """<!DOCTYPE html>
 
     function setPreset(key) {
       document.getElementById('text-input').value = presets[key];
+    }
+
+    function onVoicePresetChange(val) {
+      const refInput = document.getElementById('ref-audio');
+      if (val === 'custom') {
+        refInput.readOnly = false;
+        refInput.style.opacity = '1.0';
+        refInput.value = '';
+        refInput.placeholder = 'examples/voices/my_voice.wav (or /path/to/audio.wav)';
+        refInput.focus();
+      } else {
+        refInput.readOnly = true;
+        refInput.style.opacity = '0.85';
+        refInput.value = val;
+      }
     }
 
     async function generateSpeech() {
@@ -714,6 +742,10 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
                 timesteps = int(data.get("timesteps", 5))
                 pause = float(data.get("pause", 0.3))
                 ref_audio = data.get("ref_audio", "")
+                if ref_audio and not os.path.isabs(ref_audio):
+                    cand = os.path.join(SCRIPT_DIR, ref_audio)
+                    if os.path.exists(cand):
+                        ref_audio = cand
 
                 manager = ModelManager.get()
                 wav_data, sample_rate = manager.synthesize(
@@ -758,11 +790,18 @@ class SimpleTTSHandler(BaseHTTPRequestHandler):
                 data = json.loads(body.decode("utf-8"))
                 text = data.get("input", "")
                 response_format = data.get("response_format", "wav").lower()
-                voice = data.get("voice", "auto")
+                voice = str(data.get("voice", "auto")).lower()
 
                 ref_audio = ""
-                if voice and voice != "auto" and os.path.exists(voice):
-                    ref_audio = voice
+                if voice in ("alloy", "nova", "shimmer", "female", "nilar"):
+                    ref_audio = os.path.join(SCRIPT_DIR, "examples", "voices", "burmese_female.wav")
+                elif voice in ("echo", "fable", "onyx", "male", "thiha"):
+                    ref_audio = os.path.join(SCRIPT_DIR, "examples", "voices", "burmese_male.wav")
+                elif voice and voice != "auto":
+                    if os.path.exists(voice):
+                        ref_audio = voice
+                    elif os.path.exists(os.path.join(SCRIPT_DIR, voice)):
+                        ref_audio = os.path.join(SCRIPT_DIR, voice)
 
                 manager = ModelManager.get()
                 wav_data, sample_rate = manager.synthesize(
